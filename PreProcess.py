@@ -46,13 +46,10 @@ def remove_sample_shorter_than_ten(filePath="./data/csv/train_train.csv"):
 
 
 class data(object):
-    def __init__(self, data_path, stop_words_file=None):
+    def __init__(self, data_path):
         print("获取数据，开始时间:", datetime.datetime.now().isoformat())
         self.path = os.path.dirname(__file__)
-        if stop_words_file is None:
-            self.stop_words = []
-        else:
-            self.stop_words = set(open(stop_words_file, "r").read().split())
+
 
         # 获取数据, 数据来源于data_path
         self.df = pd.read_csv(data_path).dropna()
