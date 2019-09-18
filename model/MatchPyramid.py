@@ -1,14 +1,15 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 import tensorflow as tf
 
 
 class MatchPyramid(object):
-    def __init__(self, sequence_length, vocab_size, embedding_size, filter_sizes, batch_size):
-        self.label = tf.placeholder(tf.float32, [batch_size, ], name="label")
-        self.input_sentence_a = tf.placeholder(tf.int32, [batch_size, sequence_length], name="input_a")
-        self.input_sentence_b = tf.placeholder(tf.int32, [batch_size, sequence_length], name="input_b")
+    def __init__(self, sequence_length, vocab_size, embedding_size, filter_sizes):
+        self.label = tf.placeholder(tf.float32, [None, 2], name="label")
+        self.input_sentence_a = tf.placeholder(tf.int32, [None, sequence_length], name="input_a")
+        self.input_sentence_b = tf.placeholder(tf.int32, [None, sequence_length], name="input_b")
         self.dropout_keep_prob = tf.placeholder(tf.float32, name="dropout_keep_prob")
-        self.labels = tf.concat((tf.expand_dims(1 - self.label, axis=-1),
-                                 tf.expand_dims(self.label, axis=-1)), axis=1)
 
         with tf.name_scope("embedding_layer"):
             self.W = tf.Variable(tf.truncated_normal(shape=[vocab_size, embedding_size],
@@ -21,7 +22,6 @@ class MatchPyramid(object):
             # 构建相似性矩阵，并且使用CNN对齐分类
             self.picture = tf.matmul(self.embedded_a, self.embedded_b, transpose_b=True)
             self.picture = tf.expand_dims(self.picture, axis=-1)
-            print(self.picture)
 
         pooled_outputs = []
         for i, filter_size in enumerate(filter_sizes):
@@ -39,11 +39,10 @@ class MatchPyramid(object):
                     strides=[1, 4, 4, 1],
                     padding='VALID',
                     name="pool")
+                print(pooled)
                 pooled_outputs.append(tf.layers.flatten(tf.squeeze(pooled, axis=3)))
-                print(conv, pooled)
 
         self.h_pool = tf.concat(pooled_outputs, 1)
-        print(self.h_pool)
 
         # 句子的特征向量表示
         with tf.name_scope("dropout"):
@@ -59,11 +58,11 @@ class MatchPyramid(object):
             self.logits = tf.nn.xw_plus_b(self.h_drop, W, b)
 
         with tf.name_scope("loss"):
-            self.real = tf.argmax(self.labels, axis=1, name="real_label")
+            self.real = tf.argmax(self.label, axis=1, name="real_label")
             self.predictions = tf.argmax(self.logits, axis=1, name="predictions")
 
-            losses = tf.nn.softmax_cross_entropy_with_logits_v2(labels=self.labels, logits=self.logits)
-            self.losses = tf.reduce_mean(losses)
+            losses = tf.nn.softmax_cross_entropy_with_logits_v2(labels=self.label, logits=self.logits)
+            self.loss = tf.reduce_mean(losses)
 
         with tf.name_scope("accuracy"):
             correct_predictions = tf.equal(self.predictions, self.real)
@@ -71,8 +70,10 @@ class MatchPyramid(object):
 
 
 if __name__ == '__main__':
-    Model = MatchPyramid(sequence_length=70,
-                         vocab_size=1000,
-                         embedding_size=50,
-                         filter_sizes=[1, 2, 3, 4, 5],
-                         batch_size=100)
+    Model = MatchPyramid(
+        sequence_length=50,
+        vocab_size=20005,
+        embedding_size=100,
+        filter_sizes=[1, 2, 3, 4, 5])
+
+    print()

@@ -54,10 +54,12 @@ class SiameseLSTM(object):
             self.result = tf.nn.xw_plus_b(self.feature, self.weight, self.bias)
             self.logits = tf.nn.softmax(self.result, axis=1)
 
+        print(self.logits, self.labels)
+
         with tf.name_scope("loss"):
-            self.loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=self.labels,
-                                                                   logits=self.result)
-            self.losses = tf.reduce_mean(self.loss)
+            self.losses = tf.nn.softmax_cross_entropy_with_logits_v2(labels=self.labels,
+                                                                     logits=self.logits)
+            self.loss = tf.reduce_mean(self.losses)
 
         with tf.name_scope("accuracy"):
             self.predict = tf.argmax(self.logits, axis=1)

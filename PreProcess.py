@@ -3,21 +3,20 @@
 
 import re
 import os
+import datetime
 import pickle
 import random
-import statistics
+import logging
 
 import numpy as np
 import pandas as pd
-import datetime
-import matplotlib.pyplot as plt
-
-from collections import Counter
-from tensorflow.contrib import learn
+import tensorflow as tf
+from tqdm import tqdm
 from sklearn.model_selection import train_test_split
-# from sklearn.feature_extraction.text import TfidfVectorizer
+from keras.preprocessing.sequence import pad_sequences
 
-path = os.getcwd()
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s -- %(name)s -- %(levelname)s -- %(message)s')
+logger = logging.getLogger(__name__)
 
 
 def remove_stop_words(sentence, stop_words_set):
@@ -46,29 +45,23 @@ def remove_sample_shorter_than_ten(filePath="./data/csv/train_train.csv"):
 
 
 class data(object):
-    def __init__(self, data_path):
+    def __init__(self, data_path, maxlen=30):
         print("获取数据，开始时间:", datetime.datetime.now().isoformat())
         self.path = os.path.dirname(__file__)
 
-
         # 获取数据, 数据来源于data_path
+        self.maxlen = maxlen
         self.df = pd.read_csv(data_path).dropna()
         self.data = self.df[['question1', 'question2']].values
         self.label = self.df[['is_duplicate']].values
+        logger.info('self.path: %s.' % (self.path))
+        logger.info('self.data shape: (%d, %d)' % (self.data.shape))
+        logger.info('self.label shape: (%d, %d)' % (self.label.shape))
 
-        self.train_data, self.test_data, self.train_label, self.test_label = train_test_split(self.data,
-                                                                                              self.label,
-                                                                                              random_state=0,
-                                                                                              test_size=0.01)
-        # print(datetime.datetime.now().isoformat())
-        # print("当前文件路径 :", self.path)
-        # print("self.data.shape :", self.data.shape)
-        # print("self.label.shape :", self.label.shape)
-        # print("self.train_data.shape :", self.train_data.shape)
-        # print("self.test_data.shape :", self.test_data.shape)
-        # print("self.train_label.shape :", self.test_label.shape)
-        # print("self.test_label.shape :", self.test_feature.shape)
-
+        self.label = np.squeeze(self.label, axis=-1)
+        self.one_hot_label = np.zeros(shape=(len(self.label), 2))
+        self.one_hot_label[np.arange(0, len(self.label)), self.label] = 1
+        logger.info('one hot label shape: (%d, %d)' % (self.one_hot_label.shape))
 
     @staticmethod
     def text_to_wordlist(text):
@@ -130,51 +123,65 @@ class data(object):
         return text
 
     def get_one_hot(self):
-        if not os.path.exists(os.path.join(self.path, "./data/pkl/test.pkl"))\
-           or not os.path.exists(os.path.join(self.path, "./data/pkl/train.pkl")) \
-           or not os.path.exists(os.path.join(self.path, "./data/pkl/vocab.model")):
-            x_text = np.append(self.data, self.test_data).reshape(2 * len(self.data) +\
-                                                                  2 * len(self.test_data))
+        if not os.path.exists(os.path.join(self.path, "./data/pkl/test.pkl")) \
+           or not os.path.exists(os.path.join(self.path, "./data/pkl/length.pkl"))\
+           or not os.path.exists(os.path.join(self.path, "./data/pkl/train.pkl")):
+            self.context = self.data.reshape(-1)
 
-            # reshape 数据
-            self.train_data = self.train_data.reshape(2 * len(self.train_data))
-            self.test_data = self.test_data.reshape(2 * len(self.test_data))
 
             # 清洗数据
-            self.train_data = [self.text_to_wordlist(line) for line in self.train_data]
-            self.test_data = [self.text_to_wordlist(line) for line in self.test_data]
+            self.context = [self.text_to_wordlist(line) for line in tqdm(self.context)]
+            self.tokenizer = tf.keras.preprocessing.text.Tokenizer(
+                num_words=20000,  # 词表大小为20000，词表的提取根据TF的计算结果排序
+                filters='!"#$%&()*+,-./:;<=>?@[\]^_`{|}~ ',
+                lower=True,
+                split=' ',
+                char_level=False,
+                oov_token=None,
+                document_count=0)
 
-            # 转化成数据，将词汇进行编号
-            vocab_processor = learn.preprocessing.VocabularyProcessor(70, min_frequency=5)
-            vocab_processor = vocab_processor.fit(self.train_data)
-            print("vocab_processor 训练结束")
+            self.tokenizer.fit_on_texts(tqdm(self.context))
+            self.context = np.array(self.tokenizer.texts_to_sequences(tqdm(self.context)))
 
-            # 训练数据和测试数据进行编号
-            self.vec_train = list(vocab_processor.transform(self.train_data))
-            self.vec_test = list(vocab_processor.transform(self.test_data))
+            self.length = np.array([self.maxlen if(len(sentence) > self.maxlen) else len(sentence) \
+                    for sentence in tqdm(self.context)])
+            self.context = pad_sequences(tqdm(self.context), maxlen=self.maxlen, padding='post')
 
-            # 编号
-            self.vec_train = [(self.vec_train[index], self.vec_train[index + 1])\
-                              for index in range(0, len(self.vec_train), 2)]
-            self.vec_test = [(self.vec_test[index], self.vec_test[index + 1])\
-                             for index in range(0, len(self.vec_test), 2)]
-            print("vocab_processor 转化结束", "number of words :", len(vocab_processor.vocabulary_))
+            self.length = self.length.reshape((int(len(self.context) / 2), 2))
+            self.context = self.context.reshape((int(len(self.context) / 2), 2, self.maxlen))
+            logger.info("self.context.shape: (%d, %d, %d)" % (self.context.shape))
 
-            # 保存vocab_processor转换模型
-            pickle.dump(obj=vocab_processor, file=open("./data/pkl/vocab.model", "wb"))
+            self.train_data, self.test_data, \
+            self.train_label, self.test_label, \
+            self.train_data_length, self.test_data_length = \
+                train_test_split(self.context, self.one_hot_label, self.length, random_state=0, test_size=0.01)
 
-            # 保存转换之后的数据
-            pickle.dump(obj=(self.vec_train, self.label), file=open("./data/pkl/train.pkl", "wb"))
-            pickle.dump(obj=(self.vec_test, self.test_label), file=open("./data/pkl/test.pkl", "wb"))
-            print("dump 结束")
+            # 保存相关数据
+            pickle.dump(obj=(self.train_data, self.train_label), file=open("./data/pkl/train.pkl", "wb"))
+            pickle.dump(obj=(self.test_data, self.test_label), file=open("./data/pkl/test.pkl", "wb"))
+            pickle.dump(obj=(self.train_data_length, self.test_data_length), file=open("./data/pkl/length.pkl", "wb"))
+
+            logger.info('self.train_data shape: (%d, %d, %d)' % (self.train_data.shape))
+            logger.info('self.train_label shape: (%d, %d)' % (self.train_label.shape))
+            logger.info('self.test_data shape: (%d, %d, %d)' % (self.test_data.shape))
+            logger.info('self.test_label shape: (%d, %d)' % (self.test_label.shape))
+            logger.info('self.train_data_length shape: (%d, %d)' % (self.train_data_length.shape))
+            logger.info('self.test_data_length shape: (%d, %d)' % (self.test_data_length.shape))
         else:
-            self.vec_train, self.label = pickle.load(open("./data/pkl/train.pkl", "rb"))
-            self.vec_test, self.test_label = pickle.load(open("./data/pkl/test.pkl", "rb"))
+            self.train_data, self.train_label = pickle.load(open("./data/pkl/train.pkl", "rb"))
+            self.test_data, self.test_label = pickle.load(open("./data/pkl/test.pkl", "rb"))
+            self.train_data_length, self.test_data_length = pickle.load(open("./data/pkl/length.pkl", "rb"))
+            logger.info('self.train_data shape: (%d, %d, %d)' % (self.train_data.shape))
+            logger.info('self.train_label shape: (%d, %d)' % (self.train_label.shape))
+            logger.info('self.test_data shape: (%d, %d, %d)' % (self.test_data.shape))
+            logger.info('self.test_label shape: (%d, %d)' % (self.test_label.shape))
+            logger.info('self.train_data_length shape: (%d, %d)' % (self.train_data_length.shape))
+            logger.info('self.test_data_length shape: (%d, %d)' % (self.test_data_length.shape))
         return self
 
     @staticmethod
-    def get_batch(epoches, batch_size, data, label):
-        data = list(zip(data, label))
+    def get_batch(epoches, batch_size, data, label, sentence_length):
+        data = list(zip(data, label, sentence_length))
         for epoch in range(epoches):
             random.shuffle(data)
             for batch in range(0, len(data), batch_size):
@@ -186,5 +193,4 @@ class data(object):
 
 if __name__ == '__main__':
     data_file = "./data/csv/train.csv"
-    Data = data(data_path=data_file)
-    Data.get_one_hot()
+    Data = data(data_path=data_file, maxlen=60).get_one_hot()
