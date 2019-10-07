@@ -18,30 +18,21 @@ class Bilstm(object):
         with tf.name_scope('lstm_layer'):
             # 使用 MultiRNNCell 类实现深层循环网络中每一个时刻的前向传播过程
             with tf.variable_scope('lstm_input_a'):
-                self.lstm_forward_cell_a = [tf.nn.rnn_cell.LSTMCell(rnn_size)]
-                self.lstm_backward_cell_a = [tf.nn.rnn_cell.LSTMCell(rnn_size)]
-
-                self.multi_rnn_fw_cell_a = tf.contrib.rnn.MultiRNNCell(self.lstm_forward_cell_a)
-                self.multi_rnn_bw_cell_a = tf.contrib.rnn.MultiRNNCell(self.lstm_backward_cell_a)
+                self.lstm_forward_cell = tf.nn.rnn_cell.LSTMCell(rnn_size)
+                self.lstm_backward_cell = tf.nn.rnn_cell.LSTMCell(rnn_size)
 
                 self.outputs_a, _ = tf.nn.bidirectional_dynamic_rnn(
-                    cell_fw=self.multi_rnn_fw_cell_a,
-                    cell_bw=self.multi_rnn_bw_cell_a,
+                    cell_fw=self.lstm_forward_cell,
+                    cell_bw=self.lstm_backward_cell,
                     inputs=self.embedding_a,
                     sequence_length=self.sequence_length_a,
                     dtype=tf.float32
                 )
                 self.outputs_a = tf.concat(self.outputs_a, 2)
 
-            # with tf.variable_scope('lstm_layer_B'):
-            #     self.lstm_forward_cell_b = [tf.nn.rnn_cell.LSTMCell(rnn_size)]
-            #     self.lstm_backward_cell_b = [tf.nn.rnn_cell.LSTMCell(rnn_size)]
-            #     self.multi_rnn_fw_cell_b = tf.contrib.rnn.MultiRNNCell(self.lstm_forward_cell_b)
-            #     self.multi_rnn_bw_cell_b = tf.contrib.rnn.MultiRNNCell(self.lstm_backward_cell_b)
-
                 self.outputs_b, _ = tf.nn.bidirectional_dynamic_rnn(
-                    cell_fw=self.multi_rnn_fw_cell_a,
-                    cell_bw=self.multi_rnn_bw_cell_a,
+                    cell_fw=self.lstm_forward_cell,
+                    cell_bw=self.lstm_backward_cell,
                     inputs=self.embedding_b,
                     sequence_length=self.sequence_length_b,
                     dtype=tf.float32
@@ -72,6 +63,7 @@ class Bilstm(object):
             self.correct_pred = tf.equal(tf.argmax(self.logits, 1), tf.argmax(self.label, 1))
             self.accuracy = tf.reduce_mean(tf.cast(self.correct_pred, tf.float32))
             self.predict = tf.argmax(self.logits, axis=1)
+
 
 # model = Bilstm(embedding_size=100,
 #                vocab_size=20005,

@@ -193,4 +193,4 @@ class data(object):
 
 if __name__ == '__main__':
     data_file = "./data/csv/train.csv"
-    Data = data(data_path=data_file, maxlen=60).get_one_hot()
+    Data = data(data_path=data_file, maxlen=70).get_one_hot()
